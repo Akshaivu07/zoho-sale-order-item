@@ -50424,7 +50424,7 @@ def e_waybillsCustomized(request):
             startDate = request.GET.get('from_date', None)
             endDate = request.GET.get('to_date', None)
             
-            # Convert empty strings to None
+            
             startDate = startDate if startDate else None
             endDate = endDate if endDate else None
 
@@ -50433,15 +50433,15 @@ def e_waybillsCustomized(request):
             if startDate and endDate:
                 bill = bill.filter(start_date__range=[startDate, endDate])
 
-            # Filter based on the transaction type
+            
             if trans == 'sent':
                 bill = bill.filter(status='Saved')
             elif trans == 'draft':
                 bill = bill.filter(status='Draft')
             elif trans == 'all':
-                pass  # Do not filter, get all e-way bills
-            elif trans:  # If trans is an invalid value
-                bill = EwayBill.objects.none()  # Empty queryset
+                pass 
+            elif trans:  
+                bill = EwayBill.objects.none()  
 
             totalCustomer = bill.values('customer').distinct().count()
 
@@ -50617,7 +50617,7 @@ def sale_order_item_details(request):
              
         }
     else:
-        return redirect('login')
+        return redirect('/')
 
     return render(request, 'zohomodules/sales_order/sale_order_item_details.html', context)
 
@@ -50637,47 +50637,198 @@ def sale_order_item_details_customized(request):
             trans = request.GET.get('transactions', None)
             startDate = request.GET.get('from_date', None)
             endDate = request.GET.get('to_date', None)
-            
-            # Convert empty strings to None
-            startDate = startDate if startDate else None
-            endDate = endDate if endDate else None
 
-            items = SalesOrderItems.objects.all() 
+            items = SalesOrderItems.objects.all()
+
+            if startDate and endDate:
+                items = items.filter(sales_order__sales_order_date__range=[startDate, endDate])
+            
+            if trans == 'save':
+                items = items.filter(sales_order__status='Save')
+            elif trans == 'draft':
+                items = items.filter(sales_order__status='Draft')
+            elif trans == 'all':
+                pass
+            elif trans:
+                items = SalesOrderItems.objects.none()
+            
+            # Fetch item names for the filtered items
             for item in items:
                 item.item_name = Items.objects.get(id=item.item_id).item_name
 
-            if startDate and endDate:
-                items = items.filter(start_date__range=[startDate, endDate])
-
-            # Filter based on the transaction type
-            if trans == 'sent':
-                items = items.filter(status='Saved')
-            elif trans == 'draft':
-                items = items.filter(status='Draft')
-            elif trans == 'all':
-                pass  # Do not filter, get all e-way bills
-            elif trans:  # If trans is an invalid value
-                items = EwayBill.objects.none()  # Empty queryset
-
-        
-        
-        allmodules = ZohoModules.objects.get(company=cmp)
-
-        context = {
-            'allmodules': allmodules,
-            'details': dash_details,
-            'log_details': log_details,
-            'cmp': cmp,
-            'items': items
-             
-        }
+            allmodules = ZohoModules.objects.get(company=cmp)
+            context = {
+                'allmodules': allmodules,
+                'details': dash_details,
+                'log_details': log_details,
+                'startDate': startDate,
+                'endDate': endDate,
+                'transaction': trans,
+                
+                'companyName': cmp.company_name,
+                'cmp': cmp,
+                'items': items
+            }
     else:
-        return redirect('login')
-
+        return redirect('/')
+    
     return render(request, 'zohomodules/sales_order/sale_order_itemcustomized.html', context)
 
 
-            
+def sales_order_item_email(request):
+    if 'login_id' in request.session:
+        log_id = request.session['login_id']
+        log_details = LoginDetails.objects.get(id=log_id)
+        if log_details.user_type == 'Company':
+            cmp = CompanyDetails.objects.get(login_details=log_details)
+            dash_details = CompanyDetails.objects.get(login_details=log_details)
+        else:
+            cmp = StaffDetails.objects.get(login_details=log_details).company
+            dash_details = StaffDetails.objects.get(login_details=log_details)
+
+        try:
+            if request.method == 'POST':
+                emails_string = request.POST['email_ids']
+                emails_list = [email.strip() for email in emails_string.split(',')]
+                email_message = request.POST['email_message']
+                startDate = request.POST['start']
+                endDate = request.POST['end']
+                if startDate == "":
+                    startDate = None
+                if endDate == "":
+                    endDate = None
+
+                items = SalesOrderItems.objects.all()  # Query all SalesOrderItems
+                for item in items:
+                    item.item_name = Items.objects.get(id=item.item_id).item_name
+                    # Calculate the amount and add it to the item object
+                    item.amount = item.quantity * item.price
+
+                context = {
+                    'cmp': cmp, 
+                    'startDate': startDate,
+                    'endDate': endDate, 
+                    'items':items,
+                    'log_details': log_details,
+                    
+                    'startDate': startDate,
+                    'endDate': endDate,
+                    
+                    'companyName': cmp.company_name,
+                    }
+                template_path = 'zohomodules/sales_order/sales_order_item_email.html'
+                template = get_template(template_path)
+
+                html = template.render(context)
+                result = BytesIO()
+                pdf = pisa.pisaDocument(BytesIO(html.encode("ISO-8859-1")), result)
+                pdf = result.getvalue()
+                filename = 'Sales order item details'
+                subject = 'Sales order item details'
+                
+                email = EmailMsg(
+                    subject,
+                    f"Hi,\nPlease find the attached Sales order item details report. \n{email_message}\n\n--\nRegards,\n{cmp.company_name}\n{cmp.address}\n{cmp.state} - {cmp.country}\n{cmp.contact}",
+                    from_email=settings.EMAIL_HOST_USER,
+                    to=emails_list
+                )
+                email.attach(filename, pdf, "application/pdf")
+                email.send(fail_silently=False)
+
+                messages.success(request, 'Sales order item details report details have been shared via email successfully!')
+                return redirect(sale_order_item_details)
+        except Exception as e:
+            print(e)
+            messages.error(request, f'{e}')
+            return redirect(sale_order_item_details)
+
+def sales_order_item_emailcustomized(request):
+    if 'login_id' in request.session:
+        log_id = request.session['login_id']
+        log_details = LoginDetails.objects.get(id=log_id)
+        if log_details.user_type == 'Company':
+            cmp = CompanyDetails.objects.get(login_details=log_details)
+            dash_details = CompanyDetails.objects.get(login_details=log_details)
+        else:
+            cmp = StaffDetails.objects.get(login_details=log_details).company
+            dash_details = StaffDetails.objects.get(login_details=log_details)
+
+        try:
+            if request.method == 'POST':
+                emails_string = request.POST['email_ids']
+                emails_list = [email.strip() for email in emails_string.split(',')]
+                email_message = request.POST['email_message']
+                trans = request.POST.get('transactions', None)
+                startDate = request.POST.get('from_date', None)
+                endDate = request.POST.get('to_date', None)
+
+                items = SalesOrderItems.objects.all()
+
+                if startDate and endDate:
+                    items = items.filter(sales_order__sales_order_date__range=[startDate, endDate])
+
+                if trans == 'save':
+                    items = items.filter(sales_order__status='Saved')
+                elif trans == 'draft':
+                    items = items.filter(sales_order__status='Draft')
+                elif trans == 'all':
+                    pass
+                elif trans:
+                    items = SalesOrderItems.objects.none()
+
+                # Fetch item names and calculate amounts for the filtered items
+                for item in items:
+                    item.item_name = Items.objects.get(id=item.item_id).item_name
+                    item.amount = item.quantity * item.price
+
+                context = {
+                    'cmp': cmp,
+                    'log_details': log_details,
+                    'startDate': startDate,
+                    'endDate': endDate,
+                    'transaction': trans,
+                    'companyName': cmp.company_name,
+                    'items': items
+                }
+
+                template_path = 'zohomodules/sales_order/sales_order_item_emailcustomized.html'
+                template = get_template(template_path)
+                html = template.render(context)
+
+                result = BytesIO()
+                pdf = pisa.pisaDocument(BytesIO(html.encode("ISO-8859-1")), result)
+                pdf = result.getvalue()
+                filename = 'Sales_order_item_details.pdf'
+                subject = 'Sales order item details'
+
+                email = EmailMsg(
+                    subject,
+                    f"Hi,\nPlease find the attached Sales order item details report. \n{email_message}\n\n--\nRegards,\n{cmp.company_name}\n{cmp.address}\n{cmp.state} - {cmp.country}\n{cmp.contact}",
+                    from_email=settings.EMAIL_HOST_USER,
+                    to=emails_list
+                )
+                email.attach(filename, pdf, "application/pdf")
+                email.send(fail_silently=False)
+
+                messages.success(request, 'Sales order item details report has been shared via email successfully!')
+                return redirect('sale_order_item_details_customized')
+        except Exception as e:
+            print(e)
+            messages.error(request, f'Error: {e}')
+            return redirect('sale_order_item_details_customized')
+    else:
+        return redirect('/')
+
+
+
+   
+
+
+
+
+
+
+
 def purchase_by_item(request):
     if 'login_id' in request.session:
         log_id = request.session['login_id']

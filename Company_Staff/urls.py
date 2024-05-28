@@ -1022,6 +1022,7 @@ urlpatterns = [
     path('sale_order_item_details_customized',views.sale_order_item_details_customized,name='sale_order_item_details_customized'),
     path('sales_order_item_email',views.sales_order_item_email,name='sales_order_item_email'),
     path('sales_order_item_emailcustomized',views.sales_order_item_emailcustomized,name='sales_order_item_emailcustomized'),
+    
 
     #END------------------------------------------------------------------------------------#
     path('purchase_by_item/', views.purchase_by_item, name='purchase_by_item'),

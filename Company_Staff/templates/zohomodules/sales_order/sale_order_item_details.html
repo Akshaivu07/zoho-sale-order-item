@@ -200,8 +200,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                 <div class=" mt-lg-4 mt-2 rounded p-4" style="background-color: rgb(0, 0, 0);color: white;">
                     <h1 class="text-light">Sale Order Item Details</h1>
                     <br>
-                    <div class="col-md-3">
-                        <input type="text" id="searchInput" class="form-control text-black" style="border-color: rgb(198, 134, 16);background-color: antiquewhite;" placeholder="Search...">
+                    <div class="col-md-4 col-lg-4 col-sm-10">
+                        <input type="text" id="searchInput" class="form-control text-black" style="border-color: black;background-color: white;" placeholder="Search...">
                     </div><br>
                   
                     <div class="row  ">
@@ -310,12 +310,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody>
-                                                                    {% for  e in items %}
+                                                                    {% for item_name, item_details in items.items %}
                                                                     <tr>
                                                                         <td class="text-center">{{ forloop.counter }}</td>
-                                                                        <td class="text-center">{{ e.item_name }}</td>
-                                                                        <td class="text-center">{{ e.quantity }}</td>
-                                                                        <td class="text-center">{{ e.price }}</td>
+                                                                        <td class="text-center">{{ item_name }}</td>
+                                                                        <td class="text-center">{{ item_details.quantity }}</td>
+                                                                        <td class="text-center">{{ item_details.price }}</td>
                                                                         <td class="text-center"></td>
                                                                     </tr>
                                                                     {% endfor %}
@@ -580,18 +580,19 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         sortOrder = !sortOrder;
         }
         $(document).ready(function() {
-            $('#searchInput').on('keyup', function() {
-              var searchText = $(this).val().toLowerCase();
-              $('#data-table tbody tr').each(function() {
-                var itemData = $(this).text().toLowerCase();
-                if (itemData.indexOf(searchText) === -1) {
-                  $(this).hide();
-                } else {
-                  $(this).show();
-                }
-              });
-            });
-          });
+    $('#searchInput').on('keyup', function() {
+        var searchText = $(this).val().toLowerCase();
+        $('#reportTable tbody tr').each(function() {
+            var itemData = $(this).find('td:nth-child(2)').text().toLowerCase(); // Adjust the column index if needed
+            if (itemData.indexOf(searchText) === -1) {
+                $(this).hide();
+            } else {
+                $(this).show();
+            }
+        });
+    });
+});
+
     </script>
       
         

@@ -50602,10 +50602,20 @@ def sale_order_item_details(request):
             cmp = StaffDetails.objects.get(login_details=log_details).company
             dash_details = StaffDetails.objects.get(login_details=log_details)
 
-        items = SalesOrderItems.objects.all()  # Query all SalesOrderItems
+        items = SalesOrderItems.objects.all()
+        item_dict = {}
+
         for item in items:
-            item.item_name = Items.objects.get(id=item.item_id).item_name
-        
+            item_name = Items.objects.get(id=item.item_id).item_name
+            if item_name in item_dict:
+                item_dict[item_name]['quantity'] += item.quantity
+                item_dict[item_name]['price'] += item.price
+            else:
+                item_dict[item_name] = {
+                    'quantity': item.quantity,
+                    'price': item.price
+                }
+
         allmodules = ZohoModules.objects.get(company=cmp)
 
         context = {
@@ -50613,13 +50623,13 @@ def sale_order_item_details(request):
             'details': dash_details,
             'log_details': log_details,
             'cmp': cmp,
-            'items': items
-             
+            'items': item_dict
         }
     else:
         return redirect('/')
 
     return render(request, 'zohomodules/sales_order/sale_order_item_details.html', context)
+
 
 def sale_order_item_details_customized(request):
     context = {}
@@ -50651,10 +50661,25 @@ def sale_order_item_details_customized(request):
                 pass
             elif trans:
                 items = SalesOrderItems.objects.none()
-            
-            # Fetch item names for the filtered items
+
+            # Aggregate items by item_name
+            aggregated_items = {}
             for item in items:
-                item.item_name = Items.objects.get(id=item.item_id).item_name
+                item_name = Items.objects.get(id=item.item_id).item_name
+                if item_name in aggregated_items:
+                    aggregated_items[item_name]['quantity'] += item.quantity
+                    aggregated_items[item_name]['price'] += item.price
+                else:
+                    aggregated_items[item_name] = {
+                        'quantity': item.quantity,
+                        'price': item.price
+                    }
+
+            # Create a list of aggregated items for the context
+            aggregated_item_list = [
+                {'item_name': name, 'quantity': details['quantity'], 'price': details['price']}
+                for name, details in aggregated_items.items()
+            ]
 
             allmodules = ZohoModules.objects.get(company=cmp)
             context = {
@@ -50664,14 +50689,13 @@ def sale_order_item_details_customized(request):
                 'startDate': startDate,
                 'endDate': endDate,
                 'transaction': trans,
-                
                 'companyName': cmp.company_name,
                 'cmp': cmp,
-                'items': items
+                'items': aggregated_item_list
             }
     else:
         return redirect('/')
-    
+
     return render(request, 'zohomodules/sales_order/sale_order_itemcustomized.html', context)
 
 
@@ -50699,23 +50723,37 @@ def sales_order_item_email(request):
                     endDate = None
 
                 items = SalesOrderItems.objects.all()  # Query all SalesOrderItems
+                aggregated_items = {}
+
+                # Aggregate items by item name
                 for item in items:
-                    item.item_name = Items.objects.get(id=item.item_id).item_name
-                    # Calculate the amount and add it to the item object
-                    item.amount = item.quantity * item.price
+                    item_name = Items.objects.get(id=item.item_id).item_name
+                    if item_name in aggregated_items:
+                        # If item already exists, update quantity and amount
+                        aggregated_items[item_name]['quantity'] += item.quantity
+                        aggregated_items[item_name]['amount'] += item.quantity * item.price
+                    else:
+                        # Otherwise, initialize item in aggregated_items
+                        aggregated_items[item_name] = {
+                            'quantity': item.quantity,
+                            'price': item.price,
+                            'amount': item.quantity * item.price
+                        }
+
+                # Create a list of aggregated items for the context
+                aggregated_item_list = [
+                    {'item_name': name, 'quantity': details['quantity'], 'price': details['price'], 'amount': details['amount']}
+                    for name, details in aggregated_items.items()
+                ]
 
                 context = {
-                    'cmp': cmp, 
-                    'startDate': startDate,
-                    'endDate': endDate, 
-                    'items':items,
-                    'log_details': log_details,
-                    
+                    'cmp': cmp,
                     'startDate': startDate,
                     'endDate': endDate,
-                    
+                    'items': aggregated_item_list,
+                    'log_details': log_details,
                     'companyName': cmp.company_name,
-                    }
+                }
                 template_path = 'zohomodules/sales_order/sales_order_item_email.html'
                 template = get_template(template_path)
 
@@ -50742,6 +50780,7 @@ def sales_order_item_email(request):
             messages.error(request, f'{e}')
             return redirect(sale_order_item_details)
 
+
 def sales_order_item_emailcustomized(request):
     if 'login_id' in request.session:
         log_id = request.session['login_id']
@@ -50758,17 +50797,21 @@ def sales_order_item_emailcustomized(request):
                 emails_string = request.POST['email_ids']
                 emails_list = [email.strip() for email in emails_string.split(',')]
                 email_message = request.POST['email_message']
-                trans = request.POST.get('transactions', None)
-                startDate = request.POST.get('from_date', None)
-                endDate = request.POST.get('to_date', None)
+                trans = request.GET.get('transactions', None)
+                startDate = request.POST['start']
+                endDate = request.POST['end']
+                if startDate == "":
+                    startDate = None
+                if endDate == "":
+                    endDate = None
 
                 items = SalesOrderItems.objects.all()
 
                 if startDate and endDate:
                     items = items.filter(sales_order__sales_order_date__range=[startDate, endDate])
-
+                
                 if trans == 'save':
-                    items = items.filter(sales_order__status='Saved')
+                    items = items.filter(sales_order__status='Save')
                 elif trans == 'draft':
                     items = items.filter(sales_order__status='Draft')
                 elif trans == 'all':
@@ -50776,31 +50819,49 @@ def sales_order_item_emailcustomized(request):
                 elif trans:
                     items = SalesOrderItems.objects.none()
 
-                # Fetch item names and calculate amounts for the filtered items
+                # Aggregate items by item_name
+                aggregated_items = {}
                 for item in items:
-                    item.item_name = Items.objects.get(id=item.item_id).item_name
-                    item.amount = item.quantity * item.price
+                    item_name = Items.objects.get(id=item.item_id).item_name
+                    item.amount = item.quantity * item.price  # Calculate amount for the item
+                    if item_name in aggregated_items:
+                        aggregated_items[item_name]['quantity'] += item.quantity
+                        aggregated_items[item_name]['price'] += item.price
+                    else:
+                        aggregated_items[item_name] = {
+                            'quantity': item.quantity,
+                            'price': item.price,
+                            'amount': item.amount  # Include amount in aggregated items
+                        }
 
+                # Create a list of aggregated items for the context
+                aggregated_item_list = [
+                    {'item_name': name, 'quantity': details['quantity'], 'price': details['price'], 'amount': details['amount']}
+                    for name, details in aggregated_items.items()
+                ]
+
+                allmodules = ZohoModules.objects.get(company=cmp)
                 context = {
-                    'cmp': cmp,
+                    'allmodules': allmodules,
+                    'details': dash_details,
                     'log_details': log_details,
                     'startDate': startDate,
                     'endDate': endDate,
                     'transaction': trans,
                     'companyName': cmp.company_name,
-                    'items': items
+                    'cmp': cmp,
+                    'items': aggregated_item_list
                 }
-
                 template_path = 'zohomodules/sales_order/sales_order_item_emailcustomized.html'
                 template = get_template(template_path)
-                html = template.render(context)
 
+                html = template.render(context)
                 result = BytesIO()
                 pdf = pisa.pisaDocument(BytesIO(html.encode("ISO-8859-1")), result)
                 pdf = result.getvalue()
-                filename = 'Sales_order_item_details.pdf'
+                filename = 'Sales order item details'
                 subject = 'Sales order item details'
-
+                
                 email = EmailMsg(
                     subject,
                     f"Hi,\nPlease find the attached Sales order item details report. \n{email_message}\n\n--\nRegards,\n{cmp.company_name}\n{cmp.address}\n{cmp.state} - {cmp.country}\n{cmp.contact}",
@@ -50810,23 +50871,12 @@ def sales_order_item_emailcustomized(request):
                 email.attach(filename, pdf, "application/pdf")
                 email.send(fail_silently=False)
 
-                messages.success(request, 'Sales order item details report has been shared via email successfully!')
-                return redirect('sale_order_item_details_customized')
+                messages.success(request, 'Sales order item details report details have been shared via email successfully!')
+                return redirect(sale_order_item_details)
         except Exception as e:
             print(e)
-            messages.error(request, f'Error: {e}')
-            return redirect('sale_order_item_details_customized')
-    else:
-        return redirect('/')
-
-
-
-   
-
-
-
-
-
+            messages.error(request, f'{e}')
+            return redirect(sale_order_item_details)
 
 
 def purchase_by_item(request):
